@@ -1,7 +1,17 @@
 #!/usr/bin/env python
 # encoding: utf-8
-from pylons import c
+
+import os
+import inspect
+import logging
+
 import ckan.plugins as p
+from ckan.common import c
+try:
+    from ckan.lib.helpers import helper_functions as core_helper_functions
+except ImportError:  # CKAN <= 2.5
+    core_helper_functions = None
+
 from ckantoolkit import (
     DefaultDatasetForm,
     DefaultGroupForm,
@@ -25,7 +35,9 @@ from ckanext.scheming.validation import (
     scheming_multiple_choice,
     scheming_multiple_choice_output,
     scheming_isodatetime,
-    scheming_isodatetime_tz
+    scheming_isodatetime_tz,
+    scheming_valid_json_object,
+    scheming_load_json,
 )
 from ckanext.scheming.logic import (
     scheming_dataset_schema_list,
@@ -41,9 +53,6 @@ from ckanext.scheming.converters import (
     convert_to_json_if_datetime
 )
 
-import os
-import inspect
-
 ignore_missing = get_validator('ignore_missing')
 not_empty = get_validator('not_empty')
 convert_to_extras = get_converter('convert_to_extras')
@@ -51,7 +60,6 @@ convert_from_extras = get_converter('convert_from_extras')
 
 DEFAULT_PRESETS = 'ckanext.scheming:presets.json'
 
-import logging
 log = logging.getLogger(__name__)
 
 
@@ -63,18 +71,23 @@ class _SchemingMixin(object):
     only do them once when any plugin is loaded.
     """
     instance = None
-    _helpers_loaded = False
     _presets = None
+    _helpers_loaded = False
     _template_dir_added = False
     _validators_loaded = False
 
     def get_helpers(self):
-        if _SchemingMixin._helpers_loaded:
+        if core_helper_functions is None:
+            if _SchemingMixin._helpers_loaded:
+                return {}
+            _SchemingMixin._helpers_loaded = True
+        elif 'scheming_language_text' in core_helper_functions:
             return {}
-        _SchemingMixin._helpers_loaded = True
+
         return {
             'scheming_language_text': helpers.scheming_language_text,
             'scheming_choices_label': helpers.scheming_choices_label,
+            'scheming_field_choices': helpers.scheming_field_choices,
             'scheming_field_required': helpers.scheming_field_required,
             'scheming_dataset_schemas': helpers.scheming_dataset_schemas,
             'scheming_get_dataset_schema': helpers.scheming_get_dataset_schema,
@@ -89,7 +102,9 @@ class _SchemingMixin(object):
             'scheming_get_preset': helpers.scheming_get_preset,
             'scheming_get_schema': helpers.scheming_get_schema,
             'scheming_get_timezones': helpers.scheming_get_timezones,
-            'scheming_datetime_to_tz': helpers.scheming_datetime_to_tz
+            'scheming_datetime_to_tz': helpers.scheming_datetime_to_tz,
+            'scheming_datastore_choices': helpers.scheming_datastore_choices,
+            'scheming_display_json_value': helpers.scheming_display_json_value,
             }
 
     def get_validators(self):
@@ -105,6 +120,8 @@ class _SchemingMixin(object):
             'convert_to_json_if_datetime': convert_to_json_if_datetime,
             'scheming_isodatetime': scheming_isodatetime,
             'scheming_isodatetime_tz': scheming_isodatetime_tz,
+            'scheming_valid_json_object': scheming_valid_json_object,
+            'scheming_load_json': scheming_load_json,
             }
 
     def _add_template_directory(self, config):
@@ -154,7 +171,8 @@ class _GroupOrganizationMixin(object):
     def group_types(self):
         return list(self._schemas)
 
-    def setup_template_variables(self, context, data_dict, group_type=None):
+    def setup_template_variables(self, context, data_dict):
+        group_type = data_dict.get('type')
         if not group_type:
             if c.group_dict:
                 group_type = c.group_dict['type']
