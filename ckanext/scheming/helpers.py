@@ -1,15 +1,19 @@
 import re
 import datetime
 import pytz
+import json
 
-from pylons import config
-from pylons.i18n import gettext
+from ckantoolkit import config, _
+
+from ckanapi import LocalCKAN, NotFound, NotAuthorized
+
 
 def lang():
     # access this function late in case ckan
     # is not set up fully when importing this module
     from ckantoolkit import h
     return h.lang()
+
 
 def scheming_language_text(text, prefer_lang=None):
     """
@@ -22,11 +26,12 @@ def scheming_language_text(text, prefer_lang=None):
     if not text:
         return u''
 
+    assert text != {}
     if hasattr(text, 'get'):
         try:
             if prefer_lang is None:
                 prefer_lang = lang()
-        except:
+        except TypeError:
             pass  # lang() call will fail when no user language available
         else:
             try:
@@ -43,10 +48,23 @@ def scheming_language_text(text, prefer_lang=None):
         l, v = sorted(text.items())[0]
         return v
 
-    t = gettext(text)
-    if isinstance(t, str):
-        return t.decode('utf-8')
+    if isinstance(text, str):
+        text = text.decode('utf-8')
+    t = _(text)
     return t
+
+
+def scheming_field_choices(field):
+    """
+    :param field: scheming field definition
+    :returns: choices iterable or None if not found.
+    """
+    if 'choices' in field:
+        return field['choices']
+    if 'choices_helper' in field:
+        from ckantoolkit import h
+        choices_fn = getattr(h, field['choices_helper'])
+        return choices_fn(field)
 
 
 def scheming_choices_label(choices, value):
@@ -62,6 +80,45 @@ def scheming_choices_label(choices, value):
         if c['value'] == value:
             return scheming_language_text(c.get('label', value))
     return scheming_language_text(value)
+
+
+def scheming_datastore_choices(field):
+    """
+    Required scheming field:
+    "datastore_choices_resource": "resource_id_or_alias"
+
+    Optional scheming fields:
+    "datastore_choices_columns": {
+        "value": "value_column_name",
+        "label": "label_column_name" }
+    "datastore_choices_limit": 1000 (default)
+
+    When columns aren't specified the first column is used as value
+    and second column used as label.
+    """
+    resource_id = field['datastore_choices_resource']
+    limit = field.get('datastore_choices_limit', 1000)
+    columns = field.get('datastore_choices_columns')
+    fields = None
+    if columns:
+        fields = [columns['value'], columns['label']]
+
+    # anon user must be able to read choices or this helper
+    # could be used to leak data from private datastore tables
+    lc = LocalCKAN(username='')
+    try:
+        result = lc.action.datastore_search(
+            resource_id=resource_id,
+            limit=limit,
+            fields=fields)
+    except (NotFound, NotAuthorized):
+        return []
+
+    if not fields:
+        fields = [f['id'] for f in result['fields'] if f['id'] != '_id']
+
+    return [{'value': r[fields[0]], 'label': r[fields[1]]}
+            for r in result['records']]
 
 
 def scheming_field_required(field):
@@ -258,7 +315,7 @@ def scheming_datetime_to_tz(date, tz):
 
 def scheming_get_timezones(field):
     def to_options(list):
-        return [{'value':tz, 'text':tz} for tz in list]
+        return [{'value': tz, 'text': tz} for tz in list]
 
     def validate_tz(list):
         return [tz for tz in list if tz in pytz.all_timezones]
@@ -270,3 +327,18 @@ def scheming_get_timezones(field):
         return to_options(validate_tz(timezones))
 
     return to_options(pytz.common_timezones)
+
+
+def scheming_display_json_value(value, indent=2):
+    """
+    Returns the object passed serialized as a JSON string.
+
+    :param value: The object to serialize.
+    :returns: The serialized object, or the original value if it could not be
+        serialized.
+    :rtype: string
+    """
+    try:
+        return json.dumps(value, indent=indent, sort_keys=True)
+    except (TypeError, ValueError):
+        return value
