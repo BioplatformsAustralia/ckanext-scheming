@@ -1,2 +1,5 @@
 {# requires ckanext-spatial, uses sidebar map with extent grabbed from field data #}
-{% snippet "spatial/snippets/dataset_map_sidebar.html", extent=data[field.field_name] %}
+{% set dataset_extent = data[field.field_name] %}
+{% if dataset_extent %}
+  {% snippet "spatial/snippets/dataset_map_sidebar.html", extent=dataset_extent %}
+{% endif %}
