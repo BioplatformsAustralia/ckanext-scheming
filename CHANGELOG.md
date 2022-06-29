@@ -41,3 +41,41 @@
 * sorted_choices option to sort choices before displaying them
 * automatic reloading on schema changes in development mode
 * improved test coverage and lots of fixes
+
+## 1.2.0
+
+2019-03-22
+
+* automated tests against 2.6, 2.7, 2.8 and master
+* fixes and tests for group and org schemas
+* form_attrs are now added to existing tag classes instead of replacing them
+* remove delete button from create form
+* support for custom types in the slug widget
+* added required fields markers for groups/orgs
+* allow hiding resource fields
+* other small fixes
+
+## 2.0.0
+
+2020-04-24
+
+* python 3 support (ckan 2.9+)
+* automated tests against 2.6, 2.7, 2.8 and master now using pytest
+* select_size option defaults to choices length
+* form_snippet=null to hide form fields for group/org forms
+* improved plugin reloading support
+* add support for group/org image uploads
+* other small fixes
+
+## 2.1.0
+
+2021-01-20
+
+* repeating_subfields feature for repeating groups of dataset fields
+* multiple_text preset added to support repating text fields
+* automated tests against 2.7, 2.8, 2.9 and 2.9 under python 3
+* examples converted to yaml for readability
+* allow display of data dictionary
+* fix auto-generation of resource names
+* restore license options in 2.9
+* add support for organization image uploads
