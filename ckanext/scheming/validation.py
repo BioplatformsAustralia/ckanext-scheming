@@ -1,3 +1,4 @@
+import ast
 import json
 import datetime
 from collections import defaultdict
@@ -8,14 +9,13 @@ import six
 
 import ckan.lib.helpers as h
 from ckan.lib.navl.dictization_functions import convert
-from ckantoolkit import (
+from ckan.plugins.toolkit import (
     get_validator,
     UnknownValidator,
     missing,
     Invalid,
     StopOnError,
     _,
-    unicode_safe,
 )
 
 import ckanext.scheming.helpers as sh
@@ -24,6 +24,7 @@ from ckanext.scheming.errors import SchemingException
 OneOf = get_validator('OneOf')
 ignore_missing = get_validator('ignore_missing')
 not_empty = get_validator('not_empty')
+unicode_safe = get_validator('unicode_safe')
 
 all_validators = {}
 
@@ -48,6 +49,14 @@ def scheming_validator(fn):
 
 
 register_validator(unicode_safe)
+
+
+@register_validator
+def strip_value(value):
+    '''
+    **starting from CKAN 2.10 this is included in CKAN core**
+    '''
+    return value.strip()
 
 
 @scheming_validator
@@ -332,8 +341,18 @@ def validators_from_string(s, field, schema):
     for p in parts:
         if '(' in p and p[-1] == ')':
             name, args = p.split('(', 1)
-            args = args[:-1].split(',')  # trim trailing ')', break up
-            v = get_validator_or_converter(name)(*args)
+            args = args[:-1]  # trim trailing ')'
+            try:
+                parsed_args = ast.literal_eval(args)
+                if not isinstance(parsed_args, tuple) or not parsed_args:
+                    # it's a signle argument. `not parsed_args` means that this single
+                    # argument is an empty tuple, for example: "default(())"
+                    parsed_args = (parsed_args,)
+
+            except (ValueError, TypeError, SyntaxError, MemoryError):
+                parsed_args = args.split(',')
+
+            v = get_validator_or_converter(name)(*parsed_args)
         else:
             v = get_validator_or_converter(p)
         if getattr(v, 'is_a_scheming_validator', False):
